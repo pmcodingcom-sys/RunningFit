@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Running Tracker WebApp</title>
-
+    <link rel="manifest" href="./manifest.json">
     <script src="https://cdn.tailwindcss.com"></script>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -351,24 +351,35 @@
             switchView('history-detail');
         }
 
-        // --- โปรไฟล์ ---
         async function loadProfile() {
             if(!sbClient) return;
             showLoader();
             try {
                 if(profileId) {
-                    const { data } = await sbClient.from('profiles').select('*').eq('id', profileId).single();
+                    // ใช้ .maybeSingle() แทน .single()
+                    const { data } = await sbClient.from('profiles').select('*').eq('id', profileId).maybeSingle();
                     if(data) setProfileUI(data);
                 } else {
-                    // ถ้ายังไม่มีในเครื่อง ให้ดึงตัวแรกมา หรือสร้างใหม่
-                    const { data } = await sbClient.from('profiles').select('*').limit(1).single();
+                    // ใช้ .maybeSingle() แทน .single()
+                    const { data } = await sbClient.from('profiles').select('*').limit(1).maybeSingle();
                     if(data) {
                         profileId = data.id; localStorage.setItem('my_profile_id', profileId);
                         setProfileUI(data);
                     }
                 }
-            } catch(e) {}
+            } catch(e) {
+                console.error("Supabase Error:", e);
+            }
             hideLoader();
+        }
+
+        // --- แก้ไขระบบ PWA (ดึงไฟล์จริงแทนการใช้ Blob) ---
+        function registerPWA() {
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('./sw.js')
+                .then(() => console.log('Service Worker Registered'))
+                .catch(err => console.log('Service Worker Error:', err));
+            }
         }
 
         function setProfileUI(data) {
@@ -472,8 +483,11 @@
             }
         }
 
+        // --- แก้ไขตอนโหลดหน้าเว็บ ---
         window.addEventListener('DOMContentLoaded', () => {
-            setupPWA(); loadDashboard(); loadProfile();
+            registerPWA(); // เรียกใช้ตัวลงทะเบียน PWA ใหม่
+            loadDashboard(); 
+            loadProfile();
         });
     </script>
 </body>
