@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Running Tracker WebApp</title>
-    <link rel="manifest" href="./manifest.json">
+
     <script src="https://cdn.tailwindcss.com"></script>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -16,6 +16,11 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <link rel="manifest" href="./manifest.json">
 
     <script>
         tailwind.config = {
@@ -49,14 +54,11 @@
         .view-section.active { display: block; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .no-select { user-select: none; }
-
-        /* แผนที่จำลองสำหรับหน้ารายละเอียด */
-        .map-bg {
-            background-color: #1a1a1a;
-            background-image: radial-gradient(#333 1px, transparent 1px);
-            background-size: 20px 20px;
-        }
         
+        /* ปรับแต่งการแสดงผลของแผนที่ Leaflet ในสไตล์ดาร์กโหมด */
+        .leaflet-container { background: #111 !important; }
+        .dark-tiles { filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3); }
+
         .nav-btn.active { color: #ff5722; }
         .nav-btn.active i { color: #ff5722; }
     </style>
@@ -94,12 +96,17 @@
         </section>
 
         <section id="view-run" class="view-section p-0 h-full relative">
-            <div class="absolute inset-0 bg-[#121212] z-0 overflow-hidden map-bg"></div>
-            <div class="relative z-10 pt-12 px-6 flex justify-between items-center w-full">
-                <button class="bg-black/50 p-3 rounded-full"><i data-lucide="target" class="w-6 h-6"></i></button>
-                <div class="bg-white/10 px-4 py-2 rounded-full text-sm flex items-center gap-2"><i data-lucide="navigation" class="w-4 h-4 text-blue-400"></i><span>GPS พร้อม</span></div>
+            <div id="run-map" class="absolute inset-0 z-0"></div>
+
+            <div class="relative z-10 pt-12 px-6 flex justify-between items-center w-full pointer-events-none">
+                <button class="bg-black/70 p-3 rounded-full backdrop-blur pointer-events-auto" onclick="reCenterMap()"><i data-lucide="target" class="w-6 h-6"></i></button>
+                <div class="bg-black/70 px-4 py-2 rounded-full text-sm flex items-center gap-2 backdrop-blur">
+                    <i data-lucide="navigation" class="w-4 h-4 text-blue-400 animate-pulse"></i>
+                    <span id="gps-status">กำลังตรวจจับ GPS...</span>
+                </div>
             </div>
-            <div class="absolute bottom-0 left-0 w-full bg-gradient-to-t from-black via-black to-transparent pt-20 pb-6 px-6 z-10 flex flex-col items-center">
+
+            <div class="absolute bottom-0 left-0 w-full bg-gradient-to-t from-black via-black to-transparent pt-24 pb-6 px-6 z-10 flex flex-col items-center">
                 <p class="text-green-400 font-semibold mb-2 flex items-center gap-2"><i data-lucide="play-circle" class="w-4 h-4"></i> วิ่งกลางแจ้ง</p>
                 <div class="flex items-baseline gap-2 mb-2"><span id="run-distance" class="text-7xl font-bold">0.00</span><span class="text-xl text-gray-400">กม.</span></div>
                 <div class="w-full flex justify-between px-8 mb-8 text-center">
@@ -108,8 +115,8 @@
                     <div><div id="run-cal" class="text-xl font-semibold">0</div><div class="text-xs text-gray-400">kcal</div></div>
                 </div>
                 <div class="flex gap-6 items-center">
-                    <button id="btn-stop" onclick="stopRun()" class="w-16 h-16 rounded-full bg-red-500/20 text-red-500 flex items-center justify-center hidden"><i data-lucide="square" class="w-6 h-6 fill-current"></i></button>
-                    <button id="btn-start" onclick="toggleRun()" class="w-24 h-24 rounded-full bg-green-500 text-black flex items-center justify-center"><i id="icon-start" data-lucide="play" class="w-10 h-10 fill-current ml-2"></i></button>
+                    <button id="btn-stop" onclick="stopRun()" class="w-16 h-16 rounded-full bg-red-500/20 text-red-500 flex items-center justify-center hidden backdrop-blur"><i data-lucide="square" class="w-6 h-6 fill-current"></i></button>
+                    <button id="btn-start" onclick="toggleRun()" class="w-24 h-24 rounded-full bg-green-500 text-black flex items-center justify-center shadow-[0_0_15px_rgba(34,197,94,0.4)]"><i id="icon-start" data-lucide="play" class="w-10 h-10 fill-current ml-2"></i></button>
                 </div>
             </div>
         </section>
@@ -120,19 +127,16 @@
         </section>
 
         <section id="view-history-detail" class="view-section p-0 h-full relative overflow-y-auto">
-            <div class="absolute top-0 left-0 w-full p-4 z-20 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent">
-                <button onclick="switchView('history')" class="p-2 bg-black/50 rounded-full"><i data-lucide="arrow-left" class="w-6 h-6"></i></button>
-                <div class="flex gap-2">
-                    <button class="p-2 bg-black/50 rounded-full"><i data-lucide="share" class="w-5 h-5"></i></button>
-                    <button class="p-2 bg-black/50 rounded-full"><i data-lucide="more-vertical" class="w-5 h-5"></i></button>
+            <div class="absolute top-0 left-0 w-full p-4 z-20 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
+                <button onclick="switchView('history')" class="p-2 bg-black/60 rounded-full backdrop-blur pointer-events-auto"><i data-lucide="arrow-left" class="w-6 h-6"></i></button>
+                <div class="flex gap-2 pointer-events-auto">
+                    <button class="p-2 bg-black/60 rounded-full backdrop-blur"><i data-lucide="share" class="w-5 h-5"></i></button>
                 </div>
             </div>
             
-            <div class="h-[50vh] w-full map-bg relative">
-                <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"><i data-lucide="map-pin" class="w-10 h-10 text-green-500 fill-current"></i></div>
-            </div>
+            <div id="detail-map" class="h-[45vh] w-full z-0"></div>
 
-            <div class="bg-[#121212] rounded-t-3xl p-6 min-h-[55vh] -mt-10 relative z-10 pb-24 shadow-[0_-10px_20px_rgba(0,0,0,0.5)]">
+            <div class="bg-[#121212] rounded-t-3xl p-6 min-h-[60vh] -mt-10 relative z-10 pb-24 shadow-[0_-10px_20px_rgba(0,0,0,0.5)]">
                 <div class="flex justify-between items-start mb-6">
                     <div>
                         <p class="text-gray-400 text-sm">Mi Fitness | วิ่งกลางแจ้ง</p>
@@ -211,18 +215,23 @@
     </nav>
 
     <script>
-        // --- ส่วนตั้งค่า Supabase ---
-        const SUPABASE_URL = 'https://kcrlcyswhcgzzaviainc.supabase.co'; // <--- แก้ไข
-        const SUPABASE_ANON_KEY = 'sb_publishable_VtliqODfJWj-u5W7hziNog_-_HIwYG1'; // <--- แก้ไข
+        const SUPABASE_URL = 'https://kcrlcyswhcgzzaviainc.supabase.co'; // <--- แก้ไขจุดนี้
+        const SUPABASE_ANON_KEY = 'sb_publishable_VtliqODfJWj-u5W7hziNog_-_HIwYG1'; // <--- แก้ไขจุดนี้
         
         let sbClient;
         try { sbClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); } catch(e) {}
         lucide.createIcons();
 
-        // ตัวแปร Global สำหรับประวัติและการวิ่ง
         let historyDataGlobal = [];
         let currentProfile = { full_name: 'ผู้ใช้งาน', avatar_url: '' };
         let profileId = localStorage.getItem('my_profile_id') || null;
+
+        // Leaflet Global Variables
+        let runMap, detailMap;
+        let runPolyline, detailPolyline;
+        let userMarker;
+        let routePath = []; 
+        let watchId = null;
 
         function showLoader() { document.getElementById('loader').classList.add('active'); }
         function hideLoader() { document.getElementById('loader').classList.remove('active'); }
@@ -236,11 +245,50 @@
             if(activeBtn) activeBtn.classList.add('active');
 
             if (viewName === 'dashboard') loadDashboard();
+            if (viewName === 'run') initRunMap();
             if (viewName === 'history') loadHistory();
             if (viewName === 'profile') loadProfile();
         }
 
-        // --- ระบบวิ่ง ---
+        // --- ระบบแผนที่ Leaflet ในหน้าวิ่ง ---
+        function initRunMap() {
+            setTimeout(() => {
+                if (!runMap) {
+                    runMap = L.map('run-map', { zoomControl: false }).setView([13.7563, 100.5018], 15);
+                    const tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        maxZoom: 19,
+                        attribution: '© OpenStreetMap'
+                    }).addTo(runMap);
+                    
+                    // ปรับแต่งให้แผนที่เป็น Dark Mode ตามดีไซน์แอป
+                    tiles.getContainer().classList.add('dark-tiles');
+                    
+                    runPolyline = L.polyline([], { color: '#00d26a', weight: 5 }).addTo(runMap);
+                    userMarker = L.circleMarker([13.7563, 100.5018], { color: '#ff5722', radius: 8, fillColor: '#fff', fillOpacity: 1 }).addTo(runMap);
+                }
+                
+                // เริ่มติดตามพิกัด GPS เบื้องต้น
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(position => {
+                        const { latitude, longitude } = position.coords;
+                        runMap.setView([latitude, longitude], 17);
+                        userMarker.setLatLng([latitude, longitude]);
+                        document.getElementById('gps-status').innerText = "GPS พร้อมใช้งาน";
+                    }, () => {
+                        document.getElementById('gps-status').innerText = "กรุณาเปิด GPS";
+                    }, { enableHighAccuracy: true });
+                }
+                runMap.invalidateSize();
+            }, 200);
+        }
+
+        function reCenterMap() {
+            if (userMarker && runMap) {
+                runMap.setView(userMarker.getLatLng(), 17);
+            }
+        }
+
+        // --- ระบบออกกำลังกายและบันทึกข้อมูล ---
         let isRunning = false, timerInterval;
         let runSec = 0, runDist = 0, runSteps = 0, runCal = 0;
 
@@ -259,12 +307,57 @@
         function toggleRun() {
             const btn = document.getElementById('btn-start'), icon = document.getElementById('icon-start');
             if (!isRunning) {
-                isRunning = true; btn.classList.replace('bg-green-500', 'bg-yellow-500');
+                // เริ่มระบบจับพิกัด GPS จริงขณะวิ่ง
+                isRunning = true; 
+                btn.classList.replace('bg-green-500', 'bg-yellow-500');
                 icon.setAttribute('data-lucide', 'pause'); icon.classList.remove('ml-2');
                 document.getElementById('btn-stop').classList.remove('hidden'); lucide.createIcons();
-                timerInterval = setInterval(() => { runSec++; runDist += 2.5; runSteps += 2; runCal += 0.05; updateRunDisplay(); }, 1000);
+                
+                routePath = [];
+                runPolyline.setLatLngs([]);
+
+                // ฟังก์ชันติดตาม GPS เรียบลื่น
+                if (navigator.geolocation) {
+                    watchId = navigator.geolocation.watchPosition(position => {
+                        const { latitude, longitude, accuracy } = position.coords;
+                        
+                        // กรองสัญญาณที่คลาดเคลื่อนสูงออก
+                        if (accuracy < 30) {
+                            const newPos = [latitude, longitude];
+                            
+                            if (routePath.length > 0) {
+                                const lastPos = routePath[routePath.length - 1];
+                                // คำนวณหาระยะทางสะสมระหว่างจุดเก่าและจุดใหม่ (เมตร)
+                                const d = runMap.distance(lastPos, newPos);
+                                if (d > 2) { 
+                                    runDist += d;
+                                    runSteps += Math.round(d * 1.3); 
+                                    runCal += (d * 0.06);
+                                }
+                            }
+                            
+                            routePath.push(newPos);
+                            runPolyline.setLatLngs(routePath);
+                            userMarker.setLatLng(newPos);
+                            runMap.panTo(newPos);
+                        }
+                    }, null, { enableHighAccuracy: true, distanceFilter: 2 });
+                }
+
+                timerInterval = setInterval(() => { 
+                    runSec++; 
+                    // กรณีทดสอบในร่ม/GPS ไม่เดิน ให้ระบบสร้างระยะจำลองเพื่อทดสอบฟังก์ชัน
+                    if(routePath.length === 0) {
+                        runDist += 1.5; runSteps += 2; runCal += 0.05;
+                    }
+                    updateRunDisplay(); 
+                }, 1000);
+
             } else {
-                isRunning = false; clearInterval(timerInterval);
+                // หยุดชั่วคราว
+                isRunning = false; 
+                clearInterval(timerInterval);
+                if (watchId) navigator.geolocation.clearWatch(watchId);
                 btn.classList.replace('bg-yellow-500', 'bg-green-500');
                 icon.setAttribute('data-lucide', 'play'); icon.classList.add('ml-2'); lucide.createIcons();
             }
@@ -272,10 +365,22 @@
 
         async function stopRun() {
             if (runSec === 0) return;
-            clearInterval(timerInterval); isRunning = false; showLoader();
+            clearInterval(timerInterval); isRunning = false;
+            if (watchId) navigator.geolocation.clearWatch(watchId);
+            showLoader();
+            
             try {
-                if(sbClient) await sbClient.from('running_sessions').insert([{ distance_m: Math.floor(runDist), duration_sec: runSec, calories: Math.floor(runCal), steps: runSteps }]);
+                if(sbClient) {
+                    await sbClient.from('running_sessions').insert([{ 
+                        distance_m: Math.floor(runDist), 
+                        duration_sec: runSec, 
+                        calories: Math.floor(runCal), 
+                        steps: runSteps,
+                        route_path: JSON.stringify(routePath) // บันทึกอาเรย์พิกัดเป็น String JSON
+                    }]);
+                }
             } catch(e) {}
+            
             hideLoader(); runSec=0; runDist=0; runSteps=0; runCal=0; updateRunDisplay();
             document.getElementById('btn-start').classList.replace('bg-yellow-500', 'bg-green-500');
             document.getElementById('icon-start').setAttribute('data-lucide', 'play');
@@ -328,6 +433,7 @@
             hideLoader();
         }
 
+        // --- หน้ารายละเอียดประวัติ พร้อมวาดเส้นทางจริง ---
         function openHistoryDetail(idx) {
             const data = historyDataGlobal[idx];
             if(!data) return;
@@ -344,42 +450,60 @@
             const d = new Date(data.created_at);
             document.getElementById('detail-datetime').innerText = `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')} น.`;
             
-            // ใส่ข้อมูลโปรไฟล์ลงในหน้ารายละเอียด
             document.getElementById('detail-name').innerText = currentProfile.full_name;
             document.getElementById('detail-avatar').src = currentProfile.avatar_url || `https://ui-avatars.com/api/?name=${currentProfile.full_name}&background=random`;
 
             switchView('history-detail');
+
+            // โหลดและเรนเดอร์แผนที่ประวัติเส้นทาง
+            setTimeout(() => {
+                if (!detailMap) {
+                    detailMap = L.map('detail-map', { zoomControl: false });
+                    const tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(detailMap);
+                    tiles.getContainer().classList.add('dark-tiles');
+                    detailPolyline = L.polyline([], { color: '#ff5722', weight: 5 }).addTo(detailMap);
+                }
+
+                let parsedPath = [];
+                try {
+                    parsedPath = JSON.parse(data.route_path || '[]');
+                } catch(e) { parsedPath = []; }
+
+                if (parsedPath.length > 0) {
+                    detailPolyline.setLatLngs(parsedPath);
+                    detailMap.fitBounds(detailPolyline.getBounds(), { padding: [30, 30] });
+                    
+                    // ปักหมุดจุดเริ่มต้นและสิ้นสุด
+                    detailMap.eachLayer(layer => {
+                        if (layer instanceof L.Marker || layer instanceof L.CircleMarker) detailMap.removeLayer(layer);
+                    });
+                    L.circleMarker(parsedPath[0], { color: '#00d26a', radius: 6, fillColor: '#fff', fillOpacity: 1 }).addTo(detailMap).bindPopup('จุดเริ่มต้น');
+                    L.circleMarker(parsedPath[parsedPath.length - 1], { color: '#ff3b30', radius: 6, fillColor: '#fff', fillOpacity: 1 }).addTo(detailMap).bindPopup('จุดสิ้นสุด');
+                } else {
+                    // หากไม่มีข้อมูล GPS เดิม ให้ดึงพิกัดกรุงเทพแสดงผลพื้นฐาน
+                    detailMap.setView([13.7563, 100.5018], 13);
+                }
+                detailMap.invalidateSize();
+            }, 200);
         }
 
+        // --- โปรไฟล์ ---
         async function loadProfile() {
             if(!sbClient) return;
             showLoader();
             try {
                 if(profileId) {
-                    // ใช้ .maybeSingle() แทน .single()
                     const { data } = await sbClient.from('profiles').select('*').eq('id', profileId).maybeSingle();
                     if(data) setProfileUI(data);
                 } else {
-                    // ใช้ .maybeSingle() แทน .single()
                     const { data } = await sbClient.from('profiles').select('*').limit(1).maybeSingle();
                     if(data) {
                         profileId = data.id; localStorage.setItem('my_profile_id', profileId);
                         setProfileUI(data);
                     }
                 }
-            } catch(e) {
-                console.error("Supabase Error:", e);
-            }
+            } catch(e) {}
             hideLoader();
-        }
-
-        // --- แก้ไขระบบ PWA (ดึงไฟล์จริงแทนการใช้ Blob) ---
-        function registerPWA() {
-            if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('./sw.js')
-                .then(() => console.log('Service Worker Registered'))
-                .catch(err => console.log('Service Worker Error:', err));
-            }
         }
 
         function setProfileUI(data) {
@@ -445,47 +569,33 @@
         // --- PWA Installation Handle ---
         let deferredPrompt;
         window.addEventListener('beforeinstallprompt', (e) => {
-            // ป้องกันไม่ให้ Chrome แสดง mini-infobar อัตโนมัติ
             e.preventDefault();
             deferredPrompt = e;
-            // แสดงปุ่มติดตั้งในหน้าโปรไฟล์
             const installBtn = document.getElementById('install-pwa-btn');
             if(installBtn) installBtn.classList.remove('hidden');
         });
 
         async function installApp() {
             if (deferredPrompt) {
-                // แสดง Popup ของระบบ
                 deferredPrompt.prompt();
                 const { outcome } = await deferredPrompt.userChoice;
-                if (outcome === 'accepted') {
-                    document.getElementById('install-pwa-btn').classList.add('hidden');
-                }
+                if (outcome === 'accepted') document.getElementById('install-pwa-btn').classList.add('hidden');
                 deferredPrompt = null;
             } else {
-                alert('อุปกรณ์ของคุณไม่รองรับการติดตั้งผ่านปุ่มนี้ หรือติดตั้งไปแล้ว กรุณากด "เพิ่มลงหน้าจอหลัก" (Add to Home Screen) จากเมนูบราวเซอร์');
+                alert('ติดตั้งแอปพลิเคชันนี้เรียบร้อยแล้ว หรือเข้าใช้งานผ่านโหมด PWA แล้วครับ');
             }
         }
 
-        function setupPWA() {
-            const manifest = {
-                name: "RunTracker", short_name: "RunTracker", start_url: location.pathname, display: "standalone",
-                background_color: "#000000", theme_color: "#ff5722",
-                icons: [ { src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ff5722'%3E%3Ccircle cx='12' cy='12' r='12'/%3E%3C/svg%3E", sizes: "192x192", type: "image/svg+xml" },
-                         { src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ff5722'%3E%3Ccircle cx='12' cy='12' r='12'/%3E%3C/svg%3E", sizes: "512x512", type: "image/svg+xml" } ]
-            };
-            const mBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
-            document.head.insertAdjacentHTML('beforeend', `<link rel="manifest" href="${URL.createObjectURL(mBlob)}">`);
-            
+        function registerPWA() {
             if ('serviceWorker' in navigator) {
-                const sw = `self.addEventListener('fetch', e => {});`;
-                navigator.serviceWorker.register(URL.createObjectURL(new Blob([sw], {type: 'application/javascript'})));
+                navigator.serviceWorker.register('./sw.js')
+                .then(() => console.log('PWA Service Worker Active'))
+                .catch(err => console.log('SW Error:', err));
             }
         }
 
-        // --- แก้ไขตอนโหลดหน้าเว็บ ---
         window.addEventListener('DOMContentLoaded', () => {
-            registerPWA(); // เรียกใช้ตัวลงทะเบียน PWA ใหม่
+            registerPWA(); 
             loadDashboard(); 
             loadProfile();
         });
