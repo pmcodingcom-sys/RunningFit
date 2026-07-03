@@ -58,7 +58,6 @@
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .no-select { user-select: none; }
         
-        /* สไตล์แผนที่โหมดมืดแบบปลอดภัยสูง ผ่านคลาสครอบภายนอก */
         .dark-map .leaflet-tile { filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3); }
 
         .nav-btn.active { color: #ff5722; }
@@ -225,8 +224,9 @@
         try { sbClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); } catch(e) {}
         lucide.createIcons();
 
+        // ตัวแปรเก็บข้อมูล Cache หลัก
         let historyDataGlobal = [];
-        let currentProfile = { full_name: 'ผู้ใช้งาน', avatar_url: '' };
+        let currentProfile = { full_name: 'ผู้ใช้งาน', gender: 'ชาย', birthdate: '', height: '', weight: '', avatar_url: '' };
         let profileId = localStorage.getItem('my_profile_id') || null;
 
         let runMap, detailMap, runPolyline, detailPolyline, userMarker;
@@ -235,6 +235,7 @@
         function showLoader() { document.getElementById('loader').classList.add('active'); }
         function hideLoader() { document.getElementById('loader').classList.remove('active'); }
 
+        // ปรับปรุงกลไกการสลับหน้า: ดึงข้อมูลโปรไฟล์จากตัวแปรภายในเครื่องทันที (Instant Load)
         function switchView(viewName) {
             document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
@@ -248,7 +249,7 @@
             if (viewName === 'dashboard') loadDashboard();
             if (viewName === 'run') initRunMap();
             if (viewName === 'history') loadHistory();
-            if (viewName === 'profile') loadProfile();
+            if (viewName === 'profile') renderProfileUI(); // โหลดจากตัวแปร Cache ไม่ต้องเปิดตัวโหลด
         }
 
         function initRunMap() {
@@ -444,32 +445,41 @@
             }, 200);
         }
 
-        async function loadProfile() {
+        // --- ระบบดึงข้อมูลแบบโหลดล่วงหน้า (Preload จาก Network เพียงครั้งเดียว) ---
+        async function preloadProfileData() {
             if(!sbClient) return;
-            showLoader();
             try {
                 if(profileId) {
                     const { data } = await sbClient.from('profiles').select('*').eq('id', profileId).maybeSingle();
-                    if(data) setProfileUI(data);
+                    if(data) currentProfile = data;
                 } else {
                     const { data } = await sbClient.from('profiles').select('*').limit(1).maybeSingle();
                     if(data) {
-                        profileId = data.id; localStorage.setItem('my_profile_id', profileId);
-                        setProfileUI(data);
+                        profileId = data.id; 
+                        localStorage.setItem('my_profile_id', profileId);
+                        currentProfile = data;
                     }
                 }
-            } catch(e) {}
-            hideLoader();
+            } catch(e) {
+                console.error("Preload error:", e);
+            }
         }
 
-        function setProfileUI(data) {
-            currentProfile = data;
-            document.getElementById('prof-name').value = data.full_name || '';
-            document.getElementById('prof-gender').value = data.gender || 'ชาย';
-            if(data.birthdate) { document.getElementById('prof-birthdate').value = data.birthdate; calculateAge(); }
-            document.getElementById('prof-height').value = data.height || '';
-            document.getElementById('prof-weight').value = data.weight || '';
-            if(data.avatar_url) document.getElementById('prof-img-preview').src = data.avatar_url;
+        // แสดงผลข้อมูลไปยังคอมโพเนนต์โปรไฟล์ทันที ไม่ผ่าน Network อีก
+        function renderProfileUI() {
+            document.getElementById('prof-name').value = currentProfile.full_name || '';
+            document.getElementById('prof-gender').value = currentProfile.gender || 'ชาย';
+            if(currentProfile.birthdate) { 
+                document.getElementById('prof-birthdate').value = currentProfile.birthdate; 
+                calculateAge(); 
+            }
+            document.getElementById('prof-height').value = currentProfile.height || '';
+            document.getElementById('prof-weight').value = currentProfile.weight || '';
+            if(currentProfile.avatar_url) {
+                document.getElementById('prof-img-preview').src = currentProfile.avatar_url;
+            } else {
+                document.getElementById('prof-img-preview').src = `https://ui-avatars.com/api/?name=${currentProfile.full_name}&background=random`;
+            }
         }
 
         function calculateAge() {
@@ -513,9 +523,10 @@
                     const { data } = await sbClient.from('profiles').insert([payload]).select().single();
                     if(data) { profileId = data.id; localStorage.setItem('my_profile_id', profileId); }
                 }
+                // อัปเดตข้อมูล State ในแอปพลิเคชัน
                 currentProfile = { ...currentProfile, ...payload };
                 alert('บันทึกโปรไฟล์สำเร็จ');
-            } catch(e) { alert('เกิดข้อผิดพลาด'); }
+            } catch(e) { alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล'); }
             hideLoader();
         }
 
@@ -546,10 +557,11 @@
             }
         }
 
-        window.addEventListener('DOMContentLoaded', () => {
+        // จัดลำดับการโหลดเว็บใหม่: เรียกข้อมูลโปรไฟล์มาเตรียมพร้อมรอไว้ก่อนเลย
+        window.addEventListener('DOMContentLoaded', async () => {
             registerPWA(); 
             loadDashboard(); 
-            loadProfile();
+            await preloadProfileData(); // โหลดข้อมูลโปรไฟล์เก็บไว้ในหน่วยความจำตั้งแต่ต้นเกม
         });
     </script>
 </body>
